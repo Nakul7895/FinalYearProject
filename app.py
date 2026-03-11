@@ -46,6 +46,9 @@ detector, segmenter, classifier = load_models()
 
 uploaded_file = st.file_uploader("Upload MRI Image", type=["png","jpg","jpeg"])
 
+tumor_present = False
+tumor_percentage = None
+
 if uploaded_file is not None:
 
     file_bytes = np.asarray(bytearray(uploaded_file.read()), dtype=np.uint8)
@@ -75,6 +78,7 @@ if uploaded_file is not None:
 
     else:
 
+        tumor_present = True
         st.error("Tumor detected")
 
 # -----------------------------
@@ -141,34 +145,106 @@ if uploaded_file is not None:
         st.subheader("Tumor Type Detected:")
         st.success(tumor_type)
 
-
 # -----------------------------
-            # Grad-CAM Visualization    
-            # create GradCAM
+# Grad-CAM Visualization
+# -----------------------------
+
         gradcam = GradCAM(classifier.model, classifier.model.layer4[1].conv2)
 
-        # generate heatmap
         cam = gradcam.generate(tensor_cls)
 
-        # check if GradCAM worked
         if cam is None:
 
             st.warning("Grad-CAM could not be generated.")
 
         else:
 
-            # normalize heatmap
             cam = (cam - cam.min()) / (cam.max() - cam.min() + 1e-8)
 
-            # convert MRI to RGB
-            mri_rgb = cv2.cvtColor(cv2.resize(img,(224,224)), cv2.COLOR_GRAY2RGB)
-
-            # create heatmap
-            heatmap = cv2.applyColorMap(np.uint8(255 * cam), cv2.COLORMAP_JET)
+            heatmap = cv2.applyColorMap(
+                np.uint8(255 * cam),
+                cv2.COLORMAP_JET
+            )
 
             heatmap = cv2.cvtColor(heatmap, cv2.COLOR_BGR2RGB)
 
-            # overlay heatmap on MRI
-            overlay = cv2.addWeighted(mri_rgb, 0.6, heatmap, 0.4, 0)
+            mri_rgb = cv2.cvtColor(
+                cv2.resize(img,(224,224)),
+                cv2.COLOR_GRAY2RGB
+            )
+
+            overlay = cv2.addWeighted(
+                mri_rgb,
+                0.7,
+                heatmap,
+                0.3,
+                0
+            )
 
             st.image(overlay, caption="Grad-CAM Overlay (Model Attention)")
+
+
+# -----------------------------
+# Tumor Growth Prediction Section
+# -----------------------------
+
+if tumor_present:
+
+    st.header("Tumor Growth Prediction")
+
+    st.write("Upload additional MRI scans of the same patient to estimate tumor growth.")
+
+    growth_files = st.file_uploader(
+        "Upload multiple scans",
+        type=["png","jpg","jpeg"],
+        accept_multiple_files=True
+    )
+
+    if growth_files:
+
+        tumor_sizes = []
+
+        for file in growth_files:
+
+            file_bytes = np.asarray(bytearray(file.read()), dtype=np.uint8)
+            img = cv2.imdecode(file_bytes,0)
+
+            img_seg = cv2.resize(img,(256,256))
+            img_seg = img_seg/255.0
+
+            img4 = np.stack([img_seg,img_seg,img_seg,img_seg],axis=0)
+
+            tensor_seg = torch.tensor(img4).unsqueeze(0).float().to(device)
+
+            with torch.no_grad():
+                pred_mask = segmenter(tensor_seg)
+
+            mask = pred_mask.squeeze().cpu().numpy()
+
+            if len(mask.shape)==3:
+                mask = np.argmax(mask,axis=0)
+
+            mask = (mask>0).astype(np.uint8)
+
+            tumor_pixels = np.sum(mask)
+            total_pixels = mask.size
+
+            tumor_percentage = (tumor_pixels/total_pixels)*100
+
+            tumor_sizes.append(tumor_percentage)
+
+        if len(tumor_sizes) >= 2:
+
+            growth_rates = []
+
+            for i in range(1,len(tumor_sizes)):
+                growth_rates.append(tumor_sizes[i] - tumor_sizes[i-1])
+
+            avg_growth = sum(growth_rates)/len(growth_rates)
+
+            predicted_size = tumor_sizes[-1] + avg_growth
+
+            st.write("Tumor sizes:", [round(x,2) for x in tumor_sizes])
+            st.write("Average growth:", round(avg_growth,2), "%")
+
+            st.success(f"Predicted next scan tumor size: {round(predicted_size,2)} %")

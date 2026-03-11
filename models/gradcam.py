@@ -54,5 +54,5 @@ class GradCAM:
         cam = cam / (cam.max() + 1e-8)
 
         cam = cv2.resize(cam,(224,224))
-
+        cam[cam < 0.3] = 0
         return cam
