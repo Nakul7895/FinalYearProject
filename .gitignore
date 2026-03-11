@@ -1,0 +1,40 @@
+# Python
+__pycache__/
+*.py[cod]
+*.so
+
+# Virtual environment
+.venv/
+env/
+venv/
+
+# Jupyter notebooks
+.ipynb_checkpoints
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Logs and databases
+*.log
+*.sqlite3
+
+# Streamlit cache
+.streamlit/
+
+# Dataset folders (keep models)
+dataset_classification/
+dataset_detection/
+
+# Outputs
+outputs/
+
+# Ignore any packaged archives
+*.zip
+*.tar.gz
+*.egg
+*.whl
+
+# IDE settings
+.vscode/
+.idea/
